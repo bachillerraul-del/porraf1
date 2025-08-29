@@ -4,9 +4,159 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Porra F1 – Demo Vercel (sin DB)</title>
+  <style>
+    body{margin:0;background:#0f1115;color:#e8edf2;font-family:system-ui,Segoe UI,Roboto,Arial}
+    header,footer{padding:12px 16px;background:#171a21;position:sticky;top:0;z-index:10}
+    main{padding:16px;max-width:860px;margin:auto}
+    .card{background:#151922;border:1px solid #232a36;border-radius:12px;padding:12px;margin:12px 0}
+    input,select,button,textarea{background:#0f1320;border:1px solid #2a3445;color:#e8edf2;border-radius:8px;padding:10px;width:100%}
+    button{cursor:pointer}
+    .row{display:grid;gap:8px}
+    @media(min-width:640px){.row{grid-template-columns:repeat(3,1fr)}}
+    .muted{color:#8b95a7;font-size:.9rem}
+    .flex{display:flex;gap:8px;align-items:center}
+  </style>
 </head>
 <body>
-  <h1>Demo Porra F1</h1>
-  <p>Archivos preparados para Vercel con API en memoria.</p>
+  <header><strong>Porra F1 – Demo</strong> <span class="muted">sin base de datos</span></header>
+  <main>
+    <div class="card" id="gpSelector">
+      <h3>1) Selecciona GP</h3>
+      <div class="flex">
+        <select id="gp"></select>
+        <button id="reload">Recargar</button>
+      </div>
+      <p class="muted" id="gpInfo"></p>
+    </div>
+
+    <div class="card">
+      <h3>2) Enviar Pronóstico</h3>
+      <div class="row">
+        <input id="usuario" placeholder="Tu nombre visible (ej. Raúl)" />
+        <input id="q1" placeholder="Qualy P1" /><input id="q2" placeholder="Qualy P2" /><input id="q3" placeholder="Qualy P3" />
+        <input id="c1" placeholder="Carrera P1" /><input id="c2" placeholder="Carrera P2" />
+        <input id="c3" placeholder="Carrera P3" /><input id="c4" placeholder="Carrera P4" /><input id="c5" placeholder="Carrera P5" />
+        <input id="pod" placeholder="Piloto del Día (opcional)" />
+      </div>
+      <button id="enviar">Enviar pronóstico</button>
+      <p class="muted" id="msg"></p>
+    </div>
+
+    <div class="card">
+      <h3>3) Resultados Oficiales (solo demo)</h3>
+      <p class="muted">Introduce resultados para calcular la clasificación (se guardan en memoria del serverless).</p>
+      <div class="row">
+        <input id="rq1" placeholder="Qualy P1" /><input id="rq2" placeholder="Qualy P2" /><input id="rq3" placeholder="Qualy P3" />
+        <input id="rc1" placeholder="Carrera P1" /><input id="rc2" placeholder="Carrera P2" /><input id="rc3" placeholder="Carrera P3" />
+        <input id="rc4" placeholder="Carrera P4" /><input id="rc5" placeholder="Carrera P5" />
+        <input id="rpod" placeholder="Piloto del Día (opcional)" />
+      </div>
+      <button id="guardarResultados">Guardar resultados</button>
+      <p class="muted" id="rmsg"></p>
+    </div>
+
+    <div class="card">
+      <h3>4) Clasificación</h3>
+      <button id="calc">Recalcular</button>
+      <div id="tabla"></div>
+    </div>
+
+    <div class="card">
+      <h3>Pronósticos enviados</h3>
+      <button id="verPronosticos">Cargar lista</button>
+      <pre id="lista" style="white-space:pre-wrap"></pre>
+    </div>
+  </main>
+  <footer><span class="muted">Demo Vercel API (memoria volátil). Para producción añade una DB (Supabase/Neon/etc.).</span></footer>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const api = p => fetch(p, { headers: { "Content-Type":"application/json" } });
+
+    async function cargarGPs() {
+      const r = await api("/api/gps"); const j = await r.json();
+      const sel = $("gp"); sel.innerHTML = "";
+      j.gps.forEach(g => {
+        const o = document.createElement("option");
+        o.value = g.id; o.textContent = `${g.nombre} — ${new Date(g.fecha).toLocaleString()}`;
+        sel.appendChild(o);
+      });
+      $("gpInfo").textContent = "Se guardará en localStorage tu último GP.";
+      const last = localStorage.getItem("gpId");
+      if (last) sel.value = last;
+    }
+
+    function gpId() {
+      const id = $("gp").value;
+      localStorage.setItem("gpId", id);
+      return id;
+    }
+
+    $("reload").onclick = cargarGPs;
+
+    $("enviar").onclick = async () => {
+      const body = {
+        usuario: $("usuario").value.trim() || "Anónimo",
+        gpId: gpId(),
+        qualy: [$("q1").value.trim(),$("q2").value.trim(),$("q3").value.trim()].filter(Boolean),
+        carrera: [$("c1").value.trim(),$("c2").value.trim(),$("c3").value.trim(),$("c4").value.trim(),$("c5").value.trim()].filter(Boolean),
+        pilotoDelDia: $("pod").value.trim() || undefined
+      };
+      const r = await fetch("/api/predictions", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+      const j = await r.json();
+      $("msg").textContent = j.ok ? "✅ Pronóstico enviado" : "❌ " + j.error;
+    };
+
+    $("guardarResultados").onclick = async () => {
+      const body = {
+        gpId: gpId(),
+        qualyOficial: [$("rq1").value.trim(),$("rq2").value.trim(),$("rq3").value.trim()].filter(Boolean),
+        carreraOficial: [$("rc1").value.trim(),$("rc2").value.trim(),$("rc3").value.trim(),$("rc4").value.trim(),$("rc5").value.trim()].filter(Boolean),
+        pilotoDelDia: $("rpod").value.trim() || undefined
+      };
+      const r = await fetch("/api/results", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+      const j = await r.json();
+      $("rmsg").textContent = j.ok ? "💾 Resultados guardados" : "❌ " + j.error;
+    };
+
+    $("calc").onclick = async () => {
+      const r = await api(`/api/standings?gpId=${encodeURIComponent(gpId())}`);
+      const j = await r.json();
+      const div = $("tabla");
+      if (!j.ok || !j.standings.length) { div.innerHTML = "<p class='muted'>Sin datos aún.</p>"; return; }
+      div.innerHTML = `
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #2a3445">Pos</th>
+            <th style="text-align:left;padding:6px;border-bottom:1px solid #2a3445">Usuario</th>
+            <th style="text-align:right;padding:6px;border-bottom:1px solid #2a3445">Pts</th>
+            <th style="text-align:right;padding:6px;border-bottom:1px solid #2a3445">Qualy</th>
+            <th style="text-align:right;padding:6px;border-bottom:1px solid #2a3445">Carrera</th>
+            <th style="text-align:right;padding:6px;border-bottom:1px solid #2a3445">POD</th>
+          </tr></thead>
+          <tbody>
+            ${j.standings.map((r, i) => `
+              <tr>
+                <td style="padding:6px;border-bottom:1px solid #202636">${i+1}</td>
+                <td style="padding:6px;border-bottom:1px solid #202636">${r.usuario}</td>
+                <td style="padding:6px;border-bottom:1px solid #202636;text-align:right">${r.puntos}</td>
+                <td style="padding:6px;border-bottom:1px solid #202636;text-align:right">${r.desglose.qualy}</td>
+                <td style="padding:6px;border-bottom:1px solid #202636;text-align:right">${r.desglose.carrera}</td>
+                <td style="padding:6px;border-bottom:1px solid #202636;text-align:right">${r.desglose.pilotoDelDia}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    };
+
+    $("verPronosticos").onclick = async () => {
+      const r = await api(`/api/predictions?gpId=${encodeURIComponent(gpId())}`);
+      const j = await r.json();
+      $("lista").textContent = JSON.stringify(j.predictions, null, 2);
+    };
+
+    cargarGPs();
+  </script>
 </body>
 </html>
