@@ -1,4 +1,5 @@
 import { addPrediction, getState } from "../../lib/store";
+import { verifyToken } from "../../lib/auth";
 
 function uuid() {
   return "xxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
@@ -17,21 +18,25 @@ export default async function handler(req, res){
     return res.status(200).json({ ok: true, predictions: list });
   }
   if (req.method === "POST") {
-    const b = req.body || {};
-    if (!b.usuario || !b.gpId) {
-      return res.status(400).json({ ok:false, error:"usuario y gpId son obligatorios" });
+    try {
+      const token = req.cookies.auth;
+      const payload = await verifyToken(token);
+      const b = req.body || {};
+      if (!b.gpId) return res.status(400).json({ ok:false, error:"gpId requerido" });
+      const p = {
+        id: uuid(),
+        usuario: payload.name,
+        gpId: b.gpId,
+        qualy: Array.isArray(b.qualy) ? b.qualy.slice(0,3) : [],
+        carrera: Array.isArray(b.carrera) ? b.carrera.slice(0,5) : [],
+        pilotoDelDia: b.pilotoDelDia ?? undefined,
+        createdAt: Date.now()
+      };
+      await addPrediction(p);
+      return res.status(200).json({ ok:true, id:p.id });
+    } catch {
+      return res.status(401).json({ ok:false, error:"auth inválida" });
     }
-    const p = {
-      id: uuid(),
-      usuario: String(b.usuario).slice(0,40),
-      gpId: b.gpId,
-      qualy: Array.isArray(b.qualy) ? b.qualy.slice(0,3) : [],
-      carrera: Array.isArray(b.carrera) ? b.carrera.slice(0,5) : [],
-      pilotoDelDia: b.pilotoDelDia ?? undefined,
-      createdAt: Date.now()
-    };
-    await addPrediction(p);
-    return res.status(200).json({ ok:true, id:p.id });
   }
   res.setHeader("Allow", "GET, POST");
   res.status(405).end("Method Not Allowed");
